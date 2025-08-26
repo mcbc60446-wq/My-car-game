@@ -1,0 +1,472 @@
+<!DOCTYPE html>  <html lang="en">  
+<head>  
+  <meta charset="UTF-8" />  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />  
+  <title>Your 3D Car Game!</title>  
+  <style>  
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Arial', sans-serif; }  
+    body { overflow: hidden; }  
+    canvas { position: fixed; top: 0; left: 0; z-index: -1; }  
+    .hide { display: none !important; }  .score {  
+  position: absolute;  
+  top: 15px;  
+  left: 15px;  
+  background: #1e90ff;  
+  color: white;  
+  padding: 8px 15px;  
+  font-size: 1.2em;  
+  border-radius: 8px;  
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);  
+  z-index: 2;  
+}  
+
+.startScreen {  
+  position: absolute;  
+  z-index: 10;  
+  top: 50%;  
+  left: 50%;  
+  transform: translate(-50%, -50%);  
+  background-color: rgba(0, 0, 0, 0.7);  
+  color: white;  
+  text-align: center;  
+  padding: 2rem;  
+  border-radius: 15px;  
+  width: 80%;  
+  max-width: 400px;  
+}  
+.startScreen h1 { font-size: 3rem; margin-bottom: 1rem; }  
+.startScreen p { font-size: 1.2rem; margin-top: 0.5rem; }  
+.startScreen.clickable { cursor: pointer; }  
+#loadingText { margin-top: 1rem; font-style: italic; }  
+#startBtn, #tryAgainBtn {  
+  margin-top: 1.5rem;  
+  padding: 10px 20px;  
+  background: #1e90ff;  
+  border: none;  
+  border-radius: 8px;  
+  font-size: 1.1em;  
+  cursor: pointer;  
+  color: white;  
+}  
+
+.controls {  
+  position: fixed;  
+  bottom: 20px;  
+  width: 100%;  
+  display: flex;  
+  justify-content: space-between;  
+  padding: 0 30px;  
+  z-index: 5;  
+}  
+.control-btn {  
+  width: 80px;  
+  height: 80px;  
+  background: rgba(0, 0, 0, 0.4);  
+  color: white;  
+  font-size: 3em;  
+  text-align: center;  
+  line-height: 80px;  
+  border-radius: 50%;  
+  cursor: pointer;  
+  user-select: none;  
+}
+
+  </style>  
+</head>  
+<body>  
+  <!-- Background Music -->  
+  <!-- नया path: root में Music.mp3 -->  
+  <audio id="bgMusic" src="./Music.mp3" loop></audio>    <div class="score hide"></div>    <div class="startScreen">  
+    <h1>Welcome to Car Game</h1>  
+    <p id="loadingText">आपकी 3D कार लोड हो रही है...</p>  
+    <button id="startBtn" class="hide">Start Game</button>  
+  </div>    <div class="controls hide">  
+    <div id="leftBtn" class="control-btn">◀</div>  
+    <div id="rightBtn" class="control-btn">▶</div>  
+  </div>    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>    <script type="importmap">  
+    {  
+      "imports": {  
+        "three": "https://unpkg.com/three@0.150.1/build/three.module.js",  
+        "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/"  
+      }  
+    }  
+  </script>    <script type="module">  
+    import * as THREE from "three";  
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";  
+  
+    const scoreUI = document.querySelector(".score"),  
+      startScreen = document.querySelector(".startScreen"),  
+      loadingText = document.getElementById("loadingText"),  
+      controls = document.querySelector(".controls"),  
+      startBtn = document.getElementById("startBtn");  
+  
+    const bgMusic = document.getElementById("bgMusic");  
+    bgMusic.volume = 0.5;  
+  
+    let player = { speed: 0.1, score: 0, start: false, fuel: 50 };  
+    let keys = { ArrowLeft: false, ArrowRight: false };  
+    // --- रेलिंग के लिए नया array ---  
+    let scene, camera, renderer, playerCar, roadLines = [], enemyCars = [], coins = [], trees = [], oilObjects = [], railings = [];  
+    const ROAD_WIDTH = 6;  
+    const RAIL_MARGIN = 0.7;  
+    // --- सड़क की लंबाई के लिए नया variable ---  
+    const ROAD_LENGTH = 40;  
+  
+    function init() {  
+      scene = new THREE.Scene();  
+      scene.background = new THREE.Color(0x87ceeb);  
+      scene.fog = new THREE.Fog(0x87ceeb, 20, 50);  
+  
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);  
+      camera.position.set(0, 3, 5);  
+      camera.lookAt(0, 0, 0);  
+  
+      renderer = new THREE.WebGLRenderer({ antialias: true });  
+      renderer.setSize(window.innerWidth, window.innerHeight);  
+      document.body.appendChild(renderer.domElement);  
+  
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);  
+      scene.add(ambientLight);  
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1);  
+      dirLight.position.set(5, 10, 7);  
+      scene.add(dirLight);  
+  
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(50, 100), new THREE.MeshStandardMaterial({ color: 0x8B4513 }));  
+      ground.rotation.x = -Math.PI / 2;  
+      ground.position.y = -0.01;  
+      scene.add(ground);  
+  
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_LENGTH), new THREE.MeshStandardMaterial({ color: 0x2d3436 }));  
+      road.rotation.x = -Math.PI / 2;  
+      road.position.z = -15;  
+      scene.add(road);  
+  
+      // --- रेलिंग बनाने का फंक्शन कॉल ---  
+      createRailings();  
+    }  
+  
+    // --- रेलिंग बनाने का नया फंक्शन ---  
+    function createRailings() {  
+        const railingHeight = 0.4;  
+        const railingDepth = 0.2;  
+        const railingGeometry = new THREE.BoxGeometry(railingDepth, railingHeight, ROAD_LENGTH);  
+        const railingMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });  
+  
+        // दाईं रेलिंग  
+        const rightRailing = new THREE.Mesh(railingGeometry, railingMaterial);  
+        rightRailing.position.set(ROAD_WIDTH / 2 - railingDepth / 2, railingHeight / 2, -15);  
+        scene.add(rightRailing);  
+        railings.push(rightRailing);  
+  
+        // बाईं रेलिंग  
+        const leftRailing = new THREE.Mesh(railingGeometry, railingMaterial);  
+        leftRailing.position.set(-ROAD_WIDTH / 2 + railingDepth / 2, railingHeight / 2, -15);  
+        scene.add(leftRailing);  
+        railings.push(leftRailing);  
+    }  
+  
+    function loadCarModel() {  
+      const loader = new GLTFLoader();  
+      loader.load(  
+        // नया path: root में model.glb  
+        "./model.glb",  
+        (gltf) => {  
+          playerCar = gltf.scene;  
+  
+          const box = new THREE.Box3().setFromObject(playerCar);  
+          const size = box.getSize(new THREE.Vector3());  
+          const center = box.getCenter(new THREE.Vector3());  
+  
+          playerCar.position.sub(center);  
+  
+          const desiredSize = 1.5;  
+          const maxDim = Math.max(size.x, size.y, size.z);  
+          const scale = desiredSize / maxDim;  
+          playerCar.scale.set(scale, scale, scale);  
+  
+          playerCar.rotation.y = Math.PI;  
+          playerCar.position.y = (size.y * scale) / 2;  
+  
+          scene.add(playerCar);  
+          loadingText.innerHTML = "कार लोड हो गई!";  
+          startBtn.classList.remove("hide");  
+          startBtn.addEventListener("click", startGame, { once: true });  
+        }  
+      );  
+    }  
+  
+    function createTrees() {  
+      trees.forEach(t => scene.remove(t));  
+      trees = [];  
+      for (let i = 0; i < 30; i++) {  
+        const trunk = new THREE.Mesh(  
+          new THREE.CylinderGeometry(0.2, 0.2, 2),  
+          new THREE.MeshStandardMaterial({ color: 0x8B4513 })  
+        );  
+        trunk.position.y = 1;  
+  
+        const leaves = new THREE.Mesh(  
+          new THREE.SphereGeometry(1.2, 8, 8),  
+          new THREE.MeshStandardMaterial({ color: 0x228B22 })  
+        );  
+        leaves.position.y = 2.6;  
+  
+        const tree = new THREE.Group();  
+        tree.add(trunk);  
+        tree.add(leaves);  
+  
+        tree.position.z = -i * 20;  
+  
+        const rightTree = tree.clone();  
+        rightTree.position.x = (ROAD_WIDTH / 2) + 0.7;  
+        scene.add(rightTree);  
+        trees.push(rightTree);  
+  
+        const leftTree = tree.clone();  
+        leftTree.position.x = -(ROAD_WIDTH / 2) - 0.7;  
+        scene.add(leftTree);  
+        trees.push(leftTree);  
+      }  
+    }  
+  
+    function startGame() {  
+      bgMusic.currentTime = 0;  
+      bgMusic.play().catch(()=>{});  
+  
+      startScreen.classList.add("hide");  
+      controls.classList.remove("hide");  
+      scoreUI.classList.remove("hide");  
+      player.start = true;  
+      player.score = 0;  
+      player.fuel = 50;  
+  
+      roadLines.forEach((l) => scene.remove(l));  
+      enemyCars.forEach((e) => scene.remove(e.mesh));  
+      coins.forEach((c) => scene.remove(c.mesh));  
+      oilObjects.forEach((o) => scene.remove(o.mesh));  
+      roadLines = [];  
+      enemyCars = [];  
+      coins = [];  
+      oilObjects = [];  
+  
+      if (playerCar) playerCar.position.x = 0;  
+  
+      for (let i = 0; i < 10; i++) {  
+        const line = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.01, 2), new THREE.MeshStandardMaterial({ color: 0xffffff }));  
+        line.position.z = i * -4;  
+        scene.add(line);  
+        roadLines.push(line);  
+      }  
+  
+      for (let i = 0; i < 3; i++) {  
+        const enemy = createEnemy();  
+        enemy.mesh.position.z = -15 * (i + 1);  
+        enemyCars.push(enemy);  
+        scene.add(enemy.mesh);  
+      }  
+  
+      for (let i = 0; i < 4; i++) {  
+        const coin = createCoin();  
+        coin.mesh.position.z = -12 * (i + 1);  
+        coins.push(coin);  
+        scene.add(coin.mesh);  
+      }  
+  
+      for (let i = 0; i < 5; i++) {  
+        const oil = createOilObject();  
+        oil.mesh.position.z = -45 * (i + 1);  
+        oilObjects.push(oil);  
+        scene.add(oil.mesh);  
+      }  
+  
+      createTrees();  
+      animate();  
+    }  
+  
+    function createEnemy() {  
+      const loader = new GLTFLoader();  
+      const enemyObj = { mesh: new THREE.Group(), box: new THREE.Box3() };  
+      loader.load(  
+        // नया path: root में no.glb  
+        "./no.glb",  
+        (gltf) => {  
+          const model = gltf.scene;  
+          const box = new THREE.Box3().setFromObject(model);  
+          const size = box.getSize(new THREE.Vector3());  
+          const maxDim = Math.max(size.x, size.y, size.z);  
+          const scale = 1.5 / maxDim;  
+          model.scale.set(scale, scale, scale);  
+          model.position.y = 0.5;  
+          enemyObj.mesh.add(model);  
+        }  
+      );  
+      enemyObj.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);  
+      return enemyObj;  
+    }  
+  
+    function createCoin() {  
+      const loader = new GLTFLoader();  
+      const coinObj = { mesh: new THREE.Group(), box: new THREE.Box3() };  
+      loader.load(  
+        // नया path: root में Sikka.glb  
+        "./Sikka.glb",  
+        (gltf) => {  
+          const model = gltf.scene;  
+          const box = new THREE.Box3().setFromObject(model);  
+          const size = box.getSize(new THREE.Vector3());  
+          const maxDim = Math.max(size.x, size.y, size.z);  
+          const scale = 0.5 / maxDim;  
+          model.scale.set(scale, scale, scale);  
+          model.position.y = 0.05;  
+          coinObj.mesh.add(model);  
+        }  
+      );  
+      coinObj.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);  
+      return coinObj;  
+    }  
+  
+    function createOilObject() {  
+      const loader = new GLTFLoader();  
+      const oilObj = { mesh: new THREE.Group(), box: new THREE.Box3() };  
+      loader.load(  
+        // नया path: root में can.glb  
+        "./can.glb",  
+        (gltf) => {  
+          const model = gltf.scene;  
+  
+          const box = new THREE.Box3().setFromObject(model);  
+          const size = box.getSize(new THREE.Vector3());  
+          const maxDim = Math.max(size.x, size.y, size.z);  
+          const scale = 0.8 / maxDim;  
+          model.scale.set(scale, scale, scale);  
+          model.position.y = 0.3;  
+  
+          model.traverse((child) => {  
+            if (child.isMesh) {  
+              child.material = new THREE.MeshStandardMaterial({ color: 0xff0000 });  
+            }  
+          });  
+  
+          oilObj.mesh.add(model);  
+        }  
+      );  
+      oilObj.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);  
+      return oilObj;  
+    }  
+  
+    function animate() {  
+      if (!player.start) return;  
+      requestAnimationFrame(animate);  
+      if (!playerCar) return;  
+  
+      const baseSpeed = 0.1;  
+      const speedIncrement = 0.005;  
+      player.speed = baseSpeed + (player.score * speedIncrement);  
+  
+      if (keys.ArrowLeft && playerCar.position.x > -ROAD_WIDTH / 2 + RAIL_MARGIN) {  
+        playerCar.position.x -= player.speed;  
+      }  
+      if (keys.ArrowRight && playerCar.position.x < ROAD_WIDTH / 2 - RAIL_MARGIN) {  
+        playerCar.position.x += player.speed;  
+      }  
+  
+      const minX = -ROAD_WIDTH / 2 + RAIL_MARGIN;  
+      const maxX = ROAD_WIDTH / 2 - RAIL_MARGIN;  
+      playerCar.position.x = Math.max(minX, Math.min(maxX, playerCar.position.x));  
+  
+      const currentSpeed = player.speed * 2.5;  
+  
+      player.fuel -= 0.05;  
+      if (player.fuel <= 0) {  
+        player.fuel = 0;  
+        endGame();  
+        return;  
+      }  
+  
+      roadLines.forEach((l) => {  
+        l.position.z += currentSpeed;  
+        if (l.position.z > 5) l.position.z -= 40;  
+      });  
+  
+      trees.forEach((t) => {  
+        t.position.z += currentSpeed;  
+        if (t.position.z > 5) t.position.z -= 120 * (30/4) ;  
+      });  
+  
+      const playerBox = new THREE.Box3().setFromObject(playerCar);  
+  
+      enemyCars.forEach((e) => {  
+        e.mesh.position.z += currentSpeed;  
+        if (e.mesh.position.z > 5) {  
+          e.mesh.position.z = -40;  
+          e.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);  
+        }  
+        e.box.setFromObject(e.mesh);  
+        if (playerBox.intersectsBox(e.box)) endGame();  
+      });  
+  
+      coins.forEach((c) => {  
+        c.mesh.position.z += currentSpeed;  
+        c.mesh.rotation.y += 0.05;  
+        if (c.mesh.position.z > 5) {  
+          c.mesh.position.z = -48;  
+          c.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);  
+        }  
+        c.box.setFromObject(c.mesh);  
+        if (playerBox.intersectsBox(c.box)) {  
+          player.score += 1;  
+          c.mesh.position.z = -48;  
+          c.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);  
+        }  
+      });  
+  
+      oilObjects.forEach((o) => {  
+        o.mesh.position.z += currentSpeed;  
+        if (o.mesh.position.z > 5) {  
+          o.mesh.position.z = -180;  
+          o.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);  
+        }  
+        o.box.setFromObject(o.mesh);  
+        if (playerBox.intersectsBox(o.box)) {  
+          player.fuel = Math.min(50, player.fuel + 20);  
+          o.mesh.position.z = -180;  
+          o.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);  
+        }  
+      });  
+  
+      scoreUI.innerText = "Score: " + player.score + " | Fuel: " + player.fuel.toFixed(0) + "%";  
+      renderer.render(scene, camera);  
+    }  
+  
+    function endGame() {  
+      player.start = false;  
+      controls.classList.add("hide");  
+      scoreUI.classList.add("hide");  
+      startScreen.classList.remove("hide");  
+  
+      bgMusic.pause();  
+      bgMusic.currentTime = 0;  
+  
+      startScreen.innerHTML = `  
+        <h1 style="font-size:4rem; color:red;">GAME OVER</h1>  
+        <p style="font-size:1.5rem;">आपका स्कोर: ${player.score}</p>  
+        <p style="font-size:1.2rem;">Fuel खत्म हो गया!</p>  
+        <button id="tryAgainBtn">Try Again</button>  
+      `;  
+  
+      document.getElementById("tryAgainBtn").addEventListener("click", startGame, { once: true });  
+    }  
+  
+    document.addEventListener("keydown", (e) => { if (e.key in keys) keys[e.key] = true; });  
+    document.addEventListener("keyup", (e) => { if (e.key in keys) keys[e.key] = false; });  
+    document.getElementById("leftBtn").addEventListener("touchstart", () => (keys.ArrowLeft = true));  
+    document.getElementById("leftBtn").addEventListener("touchend", () => (keys.ArrowLeft = false));  
+    document.getElementById("rightBtn").addEventListener("touchstart", () => (keys.ArrowRight = true));  
+    document.getElementById("rightBtn").addEventListener("touchend", () => (keys.ArrowRight = false));  
+  
+    window.addEventListener("beforeunload", () => { bgMusic.pause(); bgMusic.currentTime = 0; });  
+  
+    init();  
+    loadCarModel();  
+  </script>  </body>  
+</html>
